@@ -1,0 +1,14 @@
+--- genshi/template/eval.py.orig	2009-09-11 16:21:30.104413211 -0400
++++ genshi/template/eval.py	2009-09-11 16:25:03.309414651 -0400
+@@ -279,6 +279,11 @@
+         raise UndefinedError(self._name, self._owner)
+     __call__ = __getattr__ = __getitem__ = _die
+ 
++    # Hack around some behavior introduced after Python2.6.
++    # http://bugs.python.org/issue1242657
++    # http://svn.python.org/view/python/trunk/Lib/test/test_iterlen.py?r1=69227&r2=69226&pathrev=69227
++    __length_hint__ = lambda: 0
++
+ 
+ class LookupBase(object):
+     """Abstract base class for variable lookup implementations."""

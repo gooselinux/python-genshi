@@ -1,0 +1,152 @@
+From b272bee303274c673dbcebc01dbc29002fe36ae7 Mon Sep 17 00:00:00 2001
+From: cmlenz <cmlenz@de761a21-4c15-0410-92fa-db90950b6ec0>
+Date: Tue, 19 Aug 2008 11:51:06 +0000
+Subject: [PATCH] Ported [913], [927], and [928] to the 0.5.x branch.
+
+git-svn-id: http://svn.edgewall.org/repos/genshi/branches/stable/0.5.x@947 de761a21-4c15-0410-92fa-db90950b6ec0
+---
+ ChangeLog                    |    8 ++++++++
+ genshi/filters/i18n.py       |    2 +-
+ genshi/filters/tests/i18n.py |   13 +++++++++++++
+ genshi/filters/transform.py  |    2 +-
+ setup.py                     |   22 +++++++++++++++++++---
+ 5 files changed, 42 insertions(+), 5 deletions(-)
+
+diff --git a/ChangeLog b/ChangeLog
+index 93e94f9..507eaa1 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -1,3 +1,11 @@
++Version 0.5.2
++http://svn.edgewall.org/repos/genshi/tags/0.5.2/
++(???, from branches/stable/0.5.x)
++
++ * Fix problem with I18n filter that would get confused by expressions in
++   attribute values when inside an `i18n:msg` block (ticket #250).
++
++
+ Version 0.5.1
+ http://svn.edgewall.org/repos/genshi/tags/0.5.1/
+ (Jul 9 2008, from branches/stable/0.5.x)
+diff --git a/genshi/filters/i18n.py b/genshi/filters/i18n.py
+index 209cfb0..d7f3b01 100644
+--- a/genshi/filters/i18n.py
++++ b/genshi/filters/i18n.py
+@@ -167,7 +167,7 @@ class Translator(object):
+                             newval = self.translate(value)
+                     else:
+                         newval = list(self(_ensure(value), ctxt,
+-                            search_text=False, msgbuf=msgbuf)
++                            search_text=False)
+                         )
+                     if newval != value:
+                         value = newval
+diff --git a/genshi/filters/tests/i18n.py b/genshi/filters/tests/i18n.py
+index 568ab8c..0e39e87 100644
+--- a/genshi/filters/tests/i18n.py
++++ b/genshi/filters/tests/i18n.py
+@@ -301,6 +301,19 @@ class TranslatorTestCase(unittest.TestCase):
+           <p>Jim, sei gegrüßt!</p>
+         </html>""", tmpl.generate(user=dict(name='Jim')).render())
+ 
++    def test_translate_i18n_msg_with_attribute_param(self):
++        tmpl = MarkupTemplate("""<html xmlns:py="http://genshi.edgewall.org/"
++            xmlns:i18n="http://genshi.edgewall.org/i18n">
++          <p i18n:msg="">
++            Hello, <a href="#${anchor}">dude</a>!
++          </p>
++        </html>""")
++        gettext = lambda s: u"Sei gegrüßt, [1:Alter]!"
++        tmpl.filters.insert(0, Translator(gettext))
++        self.assertEqual("""<html>
++          <p>Sei gegrüßt, <a href="#42">Alter</a>!</p>
++        </html>""", tmpl.generate(anchor='42').render())
++
+     def test_extract_i18n_msg_with_two_params(self):
+         tmpl = MarkupTemplate("""<html xmlns:py="http://genshi.edgewall.org/"
+             xmlns:i18n="http://genshi.edgewall.org/i18n">
+diff --git a/genshi/filters/transform.py b/genshi/filters/transform.py
+index d87185b..e39b1d9 100644
+--- a/genshi/filters/transform.py
++++ b/genshi/filters/transform.py
+@@ -494,7 +494,7 @@ class Transformer(object):
+         >>> buffer = StreamBuffer()
+         >>> html = HTML('<html><head><title>Some Title</title></head>'
+         ...             '<body>Some <em>body</em> text.</body></html>')
+-        >>> print html | Transformer('title/text()').copy(buffer) \\
++        >>> print html | Transformer('head/title/text()').copy(buffer) \\
+         ...     .end().select('body').prepend(tag.h1(buffer))
+         <html><head><title>Some Title</title></head><body><h1>Some
+         Title</h1>Some <em>body</em> text.</body></html>
+diff --git a/setup.py b/setup.py
+index 04243dd..4a74e99 100755
+--- a/setup.py
++++ b/setup.py
+@@ -20,9 +20,11 @@ from glob import glob
+ import os
+ try:
+     from setuptools import setup, Extension, Feature
++    from setuptools.command.bdist_egg import bdist_egg
+ except ImportError:
+     from distutils.core import setup, Extension
+     Feature = None
++    bdist_egg = None
+ import sys
+ 
+ sys.path.append(os.path.join('doc', 'common'))
+@@ -31,6 +33,7 @@ try:
+ except ImportError:
+     build_doc = test_doc = None
+ 
++_speedup_available = False
+ 
+ class optional_build_ext(build_ext):
+     # This class allows C extension building to fail.
+@@ -43,6 +46,8 @@ class optional_build_ext(build_ext):
+     def build_extension(self, ext):
+         try:
+             build_ext.build_extension(self, ext)
++            global _speedup_available
++            _speedup_available = True
+         except CCompilerError, x:
+             self._unavailable()
+ 
+@@ -65,6 +70,19 @@ if Feature:
+ else:
+     speedups = None
+ 
++
++# Setuptools need some help figuring out if the egg is "zip_safe" or not
++if bdist_egg:
++    class my_bdist_egg(bdist_egg):
++        def zip_safe(self):
++            return not _speedup_available and bdist_egg.zip_safe(self)
++
++
++cmdclass = {'build_doc': build_doc, 'test_doc': test_doc,
++            'build_ext': optional_build_ext}
++if bdist_egg:
++    cmdclass['bdist_egg'] = my_bdist_egg
++
+ setup(
+     name = 'Genshi',
+     version = '0.5.1',
+@@ -79,7 +97,6 @@ feature is a template language, which is heavily inspired by Kid.""",
+     license = 'BSD',
+     url = 'http://genshi.edgewall.org/',
+     download_url = 'http://genshi.edgewall.org/wiki/Download',
+-    zip_safe = True,
+ 
+     classifiers = [
+         'Development Status :: 4 - Beta',
+@@ -112,6 +129,5 @@ feature is a template language, which is heavily inspired by Kid.""",
+     """,
+ 
+     features = {'speedups': speedups},
+-    cmdclass = {'build_doc': build_doc, 'test_doc': test_doc,
+-                'build_ext': optional_build_ext}
++    cmdclass = cmdclass
+ )
+-- 
+1.5.5.2
+
